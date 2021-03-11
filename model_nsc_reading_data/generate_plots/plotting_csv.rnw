@@ -1,0 +1,615 @@
+\documentclass{article}
+\usepackage[top=1in,bottom=1in,left=1in,right=1in]{geometry}
+
+\usepackage{setspace}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=blue, breaklinks=true}
+
+\newcommand{\link}[1]{\footnote{\color{blue}\href{#1}{#1}}}
+\newcommand{\myhref}[1]{\href{#1}{#1}}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{linguex}
+\usepackage{natbib}
+
+%\usepackage{Sweave}
+
+<<include=FALSE>>=
+opts_chunk$set(fig.path='figures/figure_ns_')
+@
+
+<<include=FALSE>>=
+opts_chunk$set(tidy=TRUE)
+@
+
+\title{Plot and examine chains: Nat. stories}
+\author{JD}
+
+\begin{document}
+
+\maketitle
+
+\section{Preparations}
+
+<<echo=FALSE>>=
+
+library(dplyr)
+library(rstan)
+library(stringr)
+
+
+import_freq <- function(csvfile) {
+
+    freqs <- read.csv(csvfile, sep="\t")
+
+colnames(freqs)[1] <- "pos"
+colnames(freqs)[3] <- "word"
+colnames(freqs)[4] <- "freq"
+colnames(freqs)[5] <- "otherfreq"
+
+str(freqs)
+
+head(freqs)
+
+freqs$word <- tolower(freqs$word)
+
+freqs$pos <- as.character(freqs$pos)
+
+freqs <- freqs %>% group_by(pos) %>% mutate(item=strsplit((pos), "\\.")[[1]][1], zone=strsplit((pos), "\\.")[[1]][2])
+
+freqs$item <- as.character(freqs$item)
+
+head(freqs)
+
+freqs$zone <- as.integer(as.character(freqs$zone))
+
+freqs <- freqs %>% filter(grepl("\\.1$", pos))
+
+freqs$item <- as.integer(freqs$item)
+
+return (freqs)
+
+}
+
+freqs <- import_freq("freqs-1.tsv")
+
+freqs <- select(freqs, pos, word, item, zone, freq)
+
+head(as.data.frame(freqs), n=20)
+
+freqs2 <- import_freq("freqs-2.tsv")
+
+freqs2$bigram <- freqs2$freq/freqs2$otherfreq
+
+freqs2 <- select(freqs2, pos, word, item, zone, bigram)
+
+freqs2
+
+freqs3 <- import_freq("freqs-3.tsv")
+
+freqs3$trigram <- freqs3$freq/freqs3$otherfreq
+
+freqs3 <- select(freqs3, pos, word, item, zone, trigram)
+
+freqs3
+
+@
+
+
+\section{Predictions}
+
+Get chains and add information about words.
+
+<<echo=TRUE>>=
+
+burnin <- 400
+
+c1 <- read.csv("chains/natural_stories1/chain-0.csv")
+
+dataf <- select(c1, starts_with("predicted_mu_rt"))
+
+dataf <- dataf[burnin:length(dataf[,1]),]
+
+c2 <- read.csv("chains/natural_stories2/chain-0.csv")
+
+dataf.c2 <- select(c2, starts_with("predicted_mu_rt"))
+
+dataf.c2 <- dataf.c2[burnin:length(dataf.c2[,1]),]
+
+dataf <- rbind(dataf, dataf.c2)
+
+str(dataf)
+
+ndraws <- length(dataf[,1])
+nregions <- length(dataf[1,])
+
+ndraws
+nregions
+
+wordinfo <- read.csv("additional_wordinfo.csv", sep=",")
+
+str(wordinfo)
+
+wordinfo <- left_join(wordinfo, freqs, by=c("zone", "item"))
+
+wordinfo <- left_join(wordinfo, freqs2, by=c("zone", "item"))
+
+wordinfo <- left_join(wordinfo, freqs3, by=c("zone", "item"))
+
+head(wordinfo)
+
+real <- read.csv("processed_wordinfo.tsv", sep="\t")
+
+str(real)
+
+real <- select(real, word, zone, item, meanItemRT)
+
+test_wordinfo <- subset(wordinfo, record_RTs == "yes") # keep only wordinfo for actual words
+
+str(test_wordinfo)
+
+test_wordinfo <- subset(test_wordinfo, sentence_no %in% c(11:57, 68:94)) # remove the first 10 sents in both stories
+
+test_wordinfo <- subset(test_wordinfo, position != 1) # remove first word
+
+str(test_wordinfo)
+
+head(test_wordinfo,n=50)
+
+combined <- left_join(test_wordinfo, real, by=c("item", "zone"))
+
+str(combined)
+
+# Test that we match words between wordinfo and freq dataframes:
+# We should only see rows in which non-alphanumeric characters appear on word.x (-,')
+subset(combined, word.x != word.y) 
+subset(combined, word.x != word.x.x) 
+subset(combined, word.x != word.y.y) 
+
+head(combined)
+
+tail(combined)
+
+@
+
+Store the result into one dataframe.
+
+<<echo=TRUE>>=
+
+data.all <- data.frame(Region=rep(paste("No_", str_pad(1:(nregions), width=4, pad="0"), sep=""), each=ndraws), RT=c(dataf[1:ndraws,], recursive=TRUE, use.names=FALSE), Observed=rep(combined$meanItemRT[1:(nregions)], each=ndraws), Word=rep(combined$word.y[1:(nregions)], each=ndraws), Item=rep(combined$item[1:(nregions)], each=ndraws), Sentence_no=rep(as.numeric(as.factor(combined$sentence_no)), each=ndraws), Position=rep(combined$position[1:(nregions)], each=ndraws), Freq=rep(combined$freq[1:(nregions)], each=ndraws), Bigram=rep(combined$bigram[1:(nregions)], each=ndraws), Trigram=rep(combined$trigram[1:(nregions)], each=ndraws))
+
+# we remove one outlier word (Bradford) (614 ms, while mean of all other words below 500 ms)
+data.all <- subset(data.all, Observed < 500)
+
+str(data.all)
+
+head(data.all)
+
+tail(data.all)
+
+subset(data.all, Region == "No_1311")$Word[1] #should be word around
+subset(data.all, Region == "No_1311")$Word[ndraws] #should be word around
+length(subset(data.all, Region == "No_1311")$Word) #should be ndraws == 1614
+
+@
+
+We check that all predicted RTs within a sensible range (higher than 100 ms and below 1,000 ms:
+
+<<echo=TRUE>>=
+
+subset(data.all, RT < 100 | RT > 1000)
+
+@
+
+Summarise data for modeling. Below are explored models.
+
+<<echo=TRUE>>=
+
+data.model <- data.all %>% group_by(Item, Region) %>% summarise(RT=mean(RT), Position=first(Position), Freq=first(Freq), Bigram=first(Bigram), Trigram=first(Trigram), Observed=first(Observed), Sentence_no=first(Sentence_no), Word=first(as.character(Word)))
+
+data.model <- data.model %>% ungroup()
+
+data.model$Nchar <- nchar(data.model$Word)
+
+# for each story, we calculate the absolute position of a word in that story, starting from one
+
+# we use remainder of 687 (words in story 1)
+data.model$Absolute_position <- as.numeric(as.factor(data.model$Region)) %% 687
+
+data.model$Item <- as.factor(data.model$Item)
+
+@
+
+Basic check: frequency, bigram, trigram, position should be significant and negative; word length positive
+
+<<echo=TRUE>>=
+
+
+m0 <- lm(Observed ~ 1 + log(Freq), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + log(Bigram), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + log(Trigram), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + scale(Nchar), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + scale(Position), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + Item*scale(Position), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+m0 <- lm(Observed ~ 1 + scale(Absolute_position), data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m0))
+
+@
+
+After the basic check, we consider the model with RT (this is what our model predicts).
+
+<<echo=TRUE>>=
+
+# Now models with RT
+
+m1 <- lm(Observed ~ RT - 1, data=data.model)
+print(summary(m1))
+
+m1 <- lm(Observed ~ RT, data=data.model)
+print(summary(m1))
+
+m2 <- lm(Observed ~ 1 + log(Freq) * scale(Nchar) + scale(Absolute_position) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m2))
+
+m3 <- lm(Observed ~ 1 + log(Freq) * scale(Nchar) + scale(Absolute_position) + log(Bigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m3))
+
+m4 <- lm(Observed ~ 1 + log(Freq) * scale(Nchar) + scale(Absolute_position) + log(Trigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m4))
+
+m5 <- lm(Observed ~ 1 + Item + log(Freq) * scale(Nchar) * scale(Absolute_position) + log(Trigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m5))
+
+m6 <- lm(Observed ~ 1 + Item * scale(Absolute_position) + log(Freq) * scale(Nchar) + log(Trigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m6))
+
+m7 <- lm(Observed ~ 1 + Item * scale(Absolute_position) + scale(Position) + scale(Absolute_position) : scale(Position) + log(Freq) * scale(Nchar) + log(Bigram) + log(Trigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m7))
+
+# extra model
+
+m8 <- lm(Observed ~ 1 + Item + scale(Absolute_position) + scale(Position) + Item : scale(Absolute_position) + Item : scale(Position) + scale(Absolute_position) : scale(Position) + log(Freq) * scale(Nchar) + log(Bigram) + log(Trigram) + RT, data=subset(data.model, Bigram > 0 & Trigram > 0))
+print(summary(m8))
+
+@
+
+\section{Graphs and summaries}
+
+<<>>=
+
+sumdata <- subset(data.model, Bigram > 0 & Trigram > 0)
+
+cutoff <- quantile(sumdata$Trigram, seq(0, 1, 0.1))
+
+cutoff
+
+str(sumdata)
+
+sumdata$Trigramcat <- cut(sumdata$Trigram, breaks=cutoff, labels=seq(0.1, 1, 0.1))
+
+sumdata <- subset(sumdata, !is.na(Trigramcat))
+
+summary.Trigram <- sumdata %>% group_by(Trigramcat) %>% summarise(Predicted=mean(RT), sdPredicted=sd(RT), Found=mean(Observed), sdFound=sd(Observed))
+
+summary.Trigram$Trigramcat <- as.character(summary.Trigram$Trigramcat)
+
+summary.Trigram$Trigramcat <- round(cutoff[2:11], 4)
+
+summary.Trigram$Trigramcat <- as.factor(summary.Trigram$Trigramcat)
+
+data.to.plot <- data.frame(Decile=rep(summary.Trigram$Trigramcat, 2), RT=c(summary.Trigram$Predicted,summary.Trigram$Found), std=c(summary.Trigram$sdPredicted,summary.Trigram$sdFound), Data=c(rep("model", 10), rep("observed", 10)))
+
+library(ggplot2)
+
+library(dplyr)
+
+g1 <- ggplot(data.to.plot, aes(Decile, RT, color=Data, fill=Data, pch=Data))
+g1 <- g1 + geom_point(position=dodge, size=I(5)) + geom_errorbar(aes(ymin=RT-std, ymax=RT+std), position=dodge, width=0.3, size=I(1.3)) + scale_shape_manual(values=23:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4")) + theme_bw(28)
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+ggsave("trigrams.png", width=19, height=12)
+
+@
+
+<<echo=TRUE>>=
+
+cutoff <- quantile(sumdata$Freq, seq(0, 1, 0.1))
+
+cutoff
+
+subset(sumdata, Freq >= 9.81e9)
+
+subset(sumdata, Word=="the")
+
+#cutoff[10] <- cutoff[10]-1 #we do this because just one word (the) occupies more than one quantile and if we did not do it, the last two quantiles would be identical
+
+str(sumdata)
+
+sumdata$Freqcat <- cut(sumdata$Freq, breaks=cutoff[1:10], labels=seq(0.1, 1, 0.1)[1:9])
+
+sumdata <- subset(sumdata, !is.na(Freqcat))
+
+summary.Freq <- sumdata %>% group_by(Freqcat) %>% summarise(Predicted=median(RT), sdPredicted=sd(RT), Found=median(Observed), sdFound=sd(Observed), count=length(Observed))
+
+summary.Freq
+
+summary.Freq$Freqcat <- as.character(summary.Freq$Freqcat)
+
+summary.Freq$Freqcat <- round(log(cutoff[2:10]), 3)
+
+summary.Freq$Freqcat <- as.factor(summary.Freq$Freqcat)
+
+data.to.plot <- data.frame(Decile_values_in_log=as.factor(rep(summary.Freq$Freqcat, 2)), RT=c(summary.Freq$Predicted,summary.Freq$Found), std=c(summary.Freq$sdPredicted,summary.Freq$sdFound), Data=c(rep("model", 9), rep("observed", 9)))
+
+library(ggplot2)
+
+library(dplyr)
+
+g1 <- ggplot(data.to.plot, aes(Decile_values_in_log, RT, color=Data, fill=Data, pch=Data))
+g1 <- g1 + geom_point(position=dodge, size=I(5)) + geom_errorbar(aes(ymin=RT-std, ymax=RT+std), position=dodge, width=0.3, size=I(1.3)) + scale_shape_manual(values=23:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4")) + theme_bw(28)
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+ggsave("freqs.png", width=19, height=12)
+
+@
+
+<<echo=TRUE>>=
+
+cutoff <- quantile(sumdata$RT, seq(0, 1, 0.1))
+
+cutoff
+
+sumdata$RTcat <- cut(sumdata$RT, breaks=cutoff, labels=seq(0.1, 1, 0.1))
+
+sumdata <- subset(sumdata, !is.na(RTcat))
+
+summary.RT <- sumdata %>% group_by(RTcat) %>% summarise(Predicted=mean(RT), sdPredicted=sd(RT), Found=mean(Observed), sdFound=sd(Observed))
+
+summary.RT
+
+cor.test(summary.RT$Predicted, summary.RT$Found)
+
+data.to.plot <- data.frame(Decile=rep(summary.RT$RTcat, 2), RT=c(summary.RT$Predicted,summary.RT$Found), std=c(summary.RT$sdPredicted,summary.RT$sdFound), Data=c(rep("model", 10), rep("observed", 10)))
+
+library(ggplot2)
+
+library(dplyr)
+
+g1 <- ggplot(data.to.plot, aes(Decile, RT, color=Data, fill=Data, pch=Data))
+g1 <- g1 + geom_point(position=dodge, size=I(5)) + geom_errorbar(aes(ymin=RT-std, ymax=RT+std), position=dodge, width=0.3, size=I(1.3)) + scale_shape_manual(values=23:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4")) + theme_bw(28)
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+cutoff <- quantile(sumdata$Observed, seq(0, 1, 0.1))
+
+sumdata$Observedcat <- cut(sumdata$Observed, breaks=cutoff, labels=seq(0.1, 1, 0.1))
+
+sumdata <- subset(sumdata, !is.na(Observedcat))
+
+summary.Observed <- sumdata %>% group_by(Observedcat) %>% summarise(Predicted=mean(RT), sdPredicted=sd(RT), Found=mean(Observed), sdFound=sd(Observed))
+
+summary.Observed
+
+cor.test(summary.Observed$Predicted, summary.Observed$Found)
+
+m1 <- lm(summary.Observed$Predicted~-1+summary.Observed$Found)
+summary(m1)
+
+summary.Observed$Observedcat <- as.character(summary.Observed$Observedcat)
+
+summary.Observed$Observedcat <- round(cutoff[2:11])
+
+summary.Observed$Observedcat <- as.factor(summary.Observed$Observedcat)
+
+
+data.to.plot <- data.frame(Decile=rep(summary.Observed$Observedcat, 2), RT=c(summary.Observed$Predicted,summary.Observed$Found), std=c(summary.Observed$sdPredicted,summary.Observed$sdFound), Data=c(rep("model", 10), rep("observed", 10)))
+
+data.to.plot
+
+library(ggplot2)
+
+library(dplyr)
+
+
+g1 <- ggplot(data.to.plot, aes(Decile, RT, color=Data, fill=Data, pch=Data))
+g1 <- g1 + geom_point(position=dodge, size=I(5))+ geom_line(method="lm", formula=RT~Decile) + geom_errorbar(aes(ymin=RT-std, ymax=RT+std), position=dodge, width=0.3, size=I(1.3)) + scale_shape_manual(values=23:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4"))  + theme_bw(28)
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+ggsave("direct.png", width=19, height=12)
+
+
+@
+
+<<echo=TRUE>>=
+
+library(ggplot2)
+
+library(dplyr)
+
+dodge <- position_dodge(width=0.2)
+
+data.to.plot <- data.all %>%
+    group_by(Region) %>%
+    summarise(Region=first(Region), Word=first(Word), CF1=quantile(RT, probs=c(0.05, 0.95))[1], CF2=quantile(RT, probs=c(0.05, 0.95))[2], RT=mean(RT), Observed=first(Observed))
+
+head(as.data.frame(data.to.plot), n=30)
+
+g1 <- ggplot(data.to.plot, aes(Region, RT))
+g1 <- g1 + geom_point(position=dodge, size=I(5)) + geom_errorbar(aes(ymin=CF1, ymax=CF2), position=dodge, width=0.3, size=I(1.3)) + scale_shape_manual(values=21:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4")) + theme_bw(28) + theme(axis.text.x=element_blank())
+g1 <- g1 + geom_point(aes(x=Region, y=Observed), pch=24, position=dodge, size=4) 
+
+@
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+g1 <- ggplot(data.to.plot, aes(RT, Observed))
+g1 <- g1 + geom_point(size=I(2), pch=24) + geom_errorbar(aes(ymin=CF1, ymax=CF2), position=dodge, width=0.3, size=I(0.9)) + scale_shape_manual(values=21:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold3", "blue4")) + theme_bw(28) 
+g1 <- g1 + geom_point(aes(x=RT, y=RT), pch=10) 
+
+@
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+
+<<echo=TRUE>>=
+
+ggsave("predictions-observed.png")
+
+@
+
+<<echo=TRUE>>=
+
+data.to.plot$RTadjusted <- data.to.plot$RT+m2$coefficients[3]*log(as.numeric(data.to.plot$Region))
+data.to.plot$Observedadjusted <- data.to.plot$Observed+m2$coefficients[3]*log(as.numeric(data.to.plot$Region))
+data.to.plot$CF1adjusted <- data.to.plot$CF1+m2$coefficients[3]*log(as.numeric(data.to.plot$Region))
+data.to.plot$CF2adjusted <- data.to.plot$CF2+m2$coefficients[3]*log(as.numeric(data.to.plot$Region))
+
+data.to.plot
+
+g1 <- ggplot(data.to.plot, aes(RTadjusted, RTadjusted))
+g1 <- g1 + geom_point(size=I(2)) + geom_errorbar(aes(ymin=CF1adjusted, ymax=CF2adjusted), width=0.3, size=I(0.9)) + scale_shape_manual(values=21:24) + scale_color_manual(values=c("gold3", "blue4")) + scale_fill_manual(values=c("gold2", "blue4")) + theme_bw(28) 
+g1 <- g1 + geom_point(aes(x=RTadjusted, y=Observedadjusted), pch=24, size=4) 
+
+@
+
+<<echo=FALSE, fig.pos="H", fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+ggsave("ns1.png")
+
+@
+
+
+\section{Parameters}
+
+This last part shows the values of parameters and Rhat values.
+
+<<echo=FALSE>>=
+burnin <- 400
+
+collectParam <- function(param) {
+
+dataparam <- data.frame(draw=1:length(c1[,1]))
+
+dataparam$v2 <- select(c1, param)[,1]
+dataparam$v3 <- select(c2, param)[,1]
+
+return(dataparam)
+
+}
+
+createdraws <- function(param) {
+    dataparam <- collectParam(param)
+    draws <- array(data=c(dataparam$v2[burnin:length(dataparam$v2)], dataparam$v3[burnin:length(dataparam$v3)]), dim=c(length(dataparam$draw[burnin:length(dataparam$draw)]), 2))
+
+    return(draws)
+
+}
+
+@
+
+\subsection{LF}
+
+<<echo=TRUE>>=
+#############PARAMS###########
+draws <- createdraws("lf")
+
+str(draws)
+
+Rhat(draws)
+
+@
+
+Mean etc.
+
+<<echo=TRUE>>=
+
+tail(draws)
+
+mean(c(draws[,1:2]))
+median(c(draws[,1:2]))
+sd(c(draws[,1:2]))
+
+@
+
+\subsection{LE}
+
+<<echo=TRUE>>=
+#############PARAMS###########
+draws <- createdraws("le")
+
+str(draws)
+
+Rhat(draws)
+@
+
+Mean etc.
+
+<<echo=TRUE>>=
+
+tail(draws)
+
+mean(c(draws[,1:2]))
+median(c(draws[,1:2]))
+sd(c(draws[,1:2]))
+
+@
+
+\end{document}

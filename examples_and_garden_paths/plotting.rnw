@@ -1,0 +1,267 @@
+\documentclass{article}
+\usepackage[top=1in,bottom=1in,left=1in,right=1in]{geometry}
+
+\usepackage{setspace}
+
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, urlcolor=blue, breaklinks=true}
+
+\newcommand{\link}[1]{\footnote{\color{blue}\href{#1}{#1}}}
+\newcommand{\myhref}[1]{\href{#1}{#1}}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{linguex}
+\usepackage{natbib}
+
+%\usepackage{Sweave}
+
+<<include=FALSE>>=
+opts_chunk$set(fig.path='figures/')
+@
+
+<<include=FALSE>>=
+opts_chunk$set(tidy=TRUE)
+@
+
+% The package for linguistics examples
+
+\title{Plot and examine chains: 7 regions (no wrap-up; no matrix verb)}
+\author{JD}
+
+\begin{document}
+
+\maketitle
+
+
+\section{Model without emsp}
+
+<<echo=TRUE>>=
+
+library(dplyr)
+library(gdata)
+library(ggplot2)
+library(ggalt)
+
+cbPalette <- c("#E69F00", "#0072B2", "#D55E00", "#CC79A7")
+
+gp <- read.csv("activations_sentences_gardenpath.csv")
+
+str(gp)
+
+case1 <- subset(gp, sent_nr == 1 | sent_nr == 2)
+
+str(case1)
+
+case1$word <- as.character(case1$word)
+
+case1$word[which(case1$position == 5 & case1$sent_nr == 1)]  <- "the "
+case1$word[which(case1$position == 7 & case1$sent_nr == 2)]  <- "the "
+case1$word[which(case1$word == "which")]  <- "(which)"
+case1$word[which(case1$word == "was")]  <- "(was)"
+
+case1$word <- as.factor(as.character(case1$word))
+levels(case1$word)
+
+case1$garden_path <- "no"
+case1$garden_path[which(case1$sent==1)] <- "yes"
+
+# fake missing words with 0 for nice graphs
+case1 <- rbind(case1, data.frame(activation=0, position=0, word="(which)", sent_nr=1, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+case1 <- rbind(case1, data.frame(activation=0, position=0, word="(was)", sent_nr=1, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+
+# find which word should be circled as causing gp
+case1$gp <- NA
+case1$gp[which(case1$word=="fell")] <- "yes"
+
+#case1$word <- drop.levels(case1$word)
+
+ordered_levels <- as.numeric(subset(case1, sent_nr==2)$word)
+
+case1$word <- factor(case1$word, levels(case1$word)[ordered_levels])
+levels(case1$word)
+
+str(case1)
+
+g1 <- ggplot(case1, aes(x=word, y=activation, fill=garden_path, group=garden_path))
+g1 <- g1 + geom_bar(stat="identity", position="dodge")
+g1 <- g1 + geom_encircle(data=subset(case1, gp == "yes"), aes(word, activation), inherit.aes=FALSE, s_shape=0, spread=0.05, size=3, color="#D55E00")
+g1 <- g1 + theme_gray(26) + scale_fill_manual(values=cbPalette)
+
+@
+
+<<echo=FALSE, fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+case2 <- subset(gp, sent_nr == 3 | sent_nr == 4)
+
+str(case2)
+
+case2$word <- as.character(case2$word)
+
+case2$word[which(case2$position == 8 & case2$sent_nr == 3)]  <- "the "
+case2$word[which(case2$position == 9 & case2$sent_nr == 4)]  <- "the "
+case2$word[which(case2$word == ",")]  <- "(,)"
+
+case2$word <- as.factor(as.character(case2$word))
+levels(case2$word)
+
+case2$garden_path <- "no"
+case2$garden_path[which(case2$sent==3)] <- "yes"
+
+case2 <- rbind(case2, data.frame(activation=0, position=0, word="(,)", sent_nr=3, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+
+case2$gp <- NA
+case2$gp[which(case2$word=="fell")] <- "yes"
+
+ordered_levels <- as.numeric(subset(case2, sent_nr==4)$word)
+
+case2$word <- factor(case2$word, levels(case2$word)[ordered_levels])
+levels(case2$word)
+
+str(case2)
+
+g1 <- ggplot(case2, aes(x=word, y=activation, fill=garden_path, group=garden_path))
+g1 <- g1 + geom_bar(stat="identity", position="dodge")
+g1 <- g1 + geom_encircle(data=subset(case2, gp == "yes"), aes(word, activation), inherit.aes=FALSE, s_shape=0, spread=0.02, size=3, color="#D55E00")
+g1 <- g1 + theme_gray(26) + scale_fill_manual(values=cbPalette)
+
+@
+
+<<echo=FALSE, fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+case3 <- subset(gp, sent_nr == 5 | sent_nr == 6)
+
+str(case3)
+
+case3$word <- as.character(case3$word)
+
+case3$word[which(case3$word == "that")]  <- "(that)"
+
+case3$word <- as.factor(as.character(case3$word))
+levels(case3$word)
+
+case3$garden_path <- "no"
+case3$garden_path[which(case3$sent==5)] <- "yes"
+
+case3 <- rbind(case3, data.frame(activation=0, position=0, word="(that)", sent_nr=5, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+
+case3$gp <- NA
+case3$gp[which(case3$word=="are")] <- "yes"
+
+ordered_levels <- as.numeric(subset(case3, sent_nr==6)$word)
+
+case3$word <- factor(case3$word, levels(case3$word)[ordered_levels])
+levels(case3$word)
+
+str(case3)
+
+g1 <- ggplot(case3, aes(x=word, y=activation, fill=garden_path, group=garden_path))
+g1 <- g1 + geom_bar(stat="identity", position="dodge")
+g1 <- g1 + geom_encircle(data=subset(case3, gp == "yes"), aes(word, activation), inherit.aes=FALSE, s_shape=0, spread=0.03, size=3,  color="#D55E00")
+g1 <- g1 + theme_gray(26) + scale_fill_manual(values=cbPalette)
+
+@
+
+<<echo=FALSE, fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+case4 <- subset(gp, sent_nr == 7 | sent_nr == 8)
+
+str(case4)
+
+case4$word <- as.character(case4$word)
+
+case4$word[which(case4$position == 5 & case4$sent_nr == 7)]  <- "the "
+case4$word[which(case4$position == 6 & case4$sent_nr == 8)]  <- "the "
+case4$word[which(case4$word == "that")]  <- "(that)"
+
+case4$word <- as.factor(as.character(case4$word))
+levels(case4$word)
+
+case4$garden_path <- "no"
+case4$garden_path[which(case4$sent==7)] <- "yes"
+
+case4 <- rbind(case4, data.frame(activation=0, position=0, word="(that)", sent_nr=7, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+
+case4$gp <- NA
+case4$gp[which(case4$word=="bit")] <- "yes"
+
+ordered_levels <- as.numeric(subset(case4, sent_nr==8)$word)
+
+case4$word <- factor(case4$word, levels(case4$word)[ordered_levels])
+levels(case4$word)
+
+str(case4)
+
+g1 <- ggplot(case4, aes(x=word, y=activation, fill=garden_path, group=garden_path))
+g1 <- g1 + geom_bar(stat="identity", position="dodge")
+g1 <- g1 + geom_encircle(data=subset(case4, gp == "yes"), aes(word, activation), inherit.aes=FALSE, s_shape=0, spread=0.03, size=3,  color="#D55E00")
+g1 <- g1 + theme_gray(26) + scale_fill_manual(values=cbPalette)
+
+@
+
+<<echo=FALSE, fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+<<echo=TRUE>>=
+
+case5 <- subset(gp, sent_nr == 9 | sent_nr == 10)
+
+str(case5)
+
+case5$word <- as.character(case5$word)
+
+case5$word[which(case5$word == ",")]  <- "(,)"
+case5$word <- as.factor(as.character(case5$word))
+levels(case5$word)
+
+case5$garden_path <- "no"
+case5$garden_path[which(case5$sent==9)] <- "yes"
+
+case5 <- rbind(case5, data.frame(activation=0, position=0, word="(,)", sent_nr=9, retrieve_wh="None", reanalysis="no", agreeing_actions=0, matching_fs=0, fan_size=0, garden_path="yes"))
+
+case5$gp <- NA
+case5$gp[which(case5$word=="will")] <- "yes"
+
+ordered_levels <- as.numeric(subset(case5, sent_nr==10)$word)
+
+case5$word <- factor(case5$word, levels(case5$word)[ordered_levels])
+levels(case5$word)
+
+str(case5)
+
+g1 <- ggplot(case5, aes(x=word, y=activation, fill=garden_path, group=garden_path))
+g1 <- g1 + geom_bar(stat="identity", position="dodge")
+g1 <- g1 + geom_encircle(data=subset(case5, gp == "yes"), aes(word, activation), inherit.aes=FALSE, s_shape=0, spread=0.03, size=3,  color="#D55E00")
+g1 <- g1 + theme_gray(26) + scale_fill_manual(values=cbPalette)
+
+@
+
+<<echo=FALSE, fig.width=14, fig.height=10>>=
+
+g1
+
+@
+
+\end{document}

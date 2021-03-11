@@ -1,0 +1,13 @@
+Theano==1.0.4
+pymc3==3.9.2
+scipy==1.5.1
+seaborn==0.11.0
+pyparsing==2.4.7
+mpi4py==3.0.3
+pandas==1.0.5
+nltk==3.5
+matplotlib==3.2.2
+numpy==1.20.1
+pyactr==0.2.5
+scikit_learn==0.24.1
+simpy==4.0.1
